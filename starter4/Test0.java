@@ -1,6 +1,8 @@
 class Main {
     public void main() {
-    	if(true && true) {
+        int a = 0;
+    	if(a && 
+            null) {
             
         }
     }

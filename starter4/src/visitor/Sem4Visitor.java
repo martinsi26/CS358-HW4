@@ -19,21 +19,7 @@ import errorMsg.*;
 //   - the method has the correct number of parameters
 //   - the types of each actual parameter is compatible with that
 //     of its corresponding formal parameter
-// - ensure that for each instance variable access (e.g., abc.foo),
-//   there is an instance variable defined for the given class (or
-//   in a superclass
-//   - sets the 'varDec' link in the InstVarAccess to refer to the
-//     method
-// - ensure that the RHS expression in each assignment statement is
-//   type-compatible with its corresponding LHS
-//   - also checks that the LHS an lvalue
-// - ensure that if a method with a given name is defined in both
-//   a subclass and a superclass, that they have the same parameters
-//   (with identical types) and the same return type
-// - ensure that the declared return-type of a method is compatible
-//   with its "return" expression
-// - ensuring that the type of the control expression for an if- or
-//   while-statement is boolean
+// 
 public class Sem4Visitor extends Visitor
 {
     ClassDecl currentClass;
@@ -69,21 +55,23 @@ public class Sem4Visitor extends Visitor
         ObjectType.link = classEnv.get("Object");
     }
 
-    public Boolean isBaseType(t) {
+    public Boolean isBaseType(int pos, Type t) {
         if(t.isBoolean() || t.isInt() || t.isID()) {
             return true;
         }
+        errorMsg.error(pos, new ArrayTypeError());
         return false;
     }
 
-    public Boolean checkCompatible(Type t1, Type t2) {
-        if(checkSubtype(t1, t2) || checkSubtype(t2, t1)) {
+    public Boolean checkCompatible(int pos, int t1pos, int t2pos, Type t1, Type t2) {
+        if(checkSubtype(t1pos, t1, t2) || checkSubtype(t2pos, t2, t1)) {
             return true;
         }
+        errorMsg.error(pos, new IncompatibleTypeError(t1, t2));
         return false;
     }
 
-    public Boolean checkSubtype(Type t1, Type t2) {
+    public Boolean checkSubtype(int pos, Type t1, Type t2) {
         if(t1.isInt() && t2.isInt()) {
             return true;
         }
@@ -91,7 +79,7 @@ public class Sem4Visitor extends Visitor
             return true;
         }
         if(t1.isArray() && t2.isArray()) {
-            if(t1.baseType.name.equals(t2.arrayType.baseType.name)) {
+            if(((ArrayType)t1).baseType.name().equals(((ArrayType)t2).baseType.name())) {
                 return true;
             }
         }
@@ -100,7 +88,7 @@ public class Sem4Visitor extends Visitor
                 return true;
             }
         }
-        if(t1.isError() && isBaseType(t2)) {
+        if(t1.isError() && isBaseType(pos, t2)) {
             return true;
         }
         if(t1.isID()) {
@@ -120,56 +108,13 @@ public class Sem4Visitor extends Visitor
                 }
             }
         }
-        if(isBaseType(t1)) {
+        if(isBaseType(pos, t1)) {
             if(t2.isObject()) {
                 // T <: Object
                 // null <: T
             }
         }
         return false;
-    }
-
-    // public Object compatibilityError(int pos, Type t1, Type t2) {
-    //     if(t1.isID()) {
-    //         if(t2.isID()) {
-    //             IdentifierType originalType = (IdentifierType)t1;
-    //             IdentifierType compatabilityType = (IdentifierType)t2;
-    //             if(!originalType.link.name.equals(compatabilityType.name)) {
-    //                 //error
-    //                 return null;
-    //             }
-    //         }
-    //         // error
-    //         return null;
-    //     }
-    //     return null;
-    // }
-
-    // // Check to see if t1 is a subtype of t2
-    // public Object checkSubtype(int pos, Type t1, Type t2) {
-    //     if(t1.isID()) {
-    //         if(t2.isID()) {
-    //             IdentifierType originalType = (IdentifierType)t1;
-    //             IdentifierType inheritenceType = (IdentifierType)t2;
-    //             if(originalType.link.name.equals(inheritenceType.name)) {
-    //                 // originalType is subtype of inheritenceType
-    //             } else if(originalType.link.superLink != null) {
-    //                 ClassDecl c = originalType.link;
-    //                 while(c.superLink != null) {
-    //                     if(c.superLink.name.equals(inheritenceType.name)) {
-    //                         // originalType is a subtype of inheritenceType
-    //                     }
-    //                     c = c.superLink;
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     return null;
-    // }
-
-    public Object matchingError(int pos, Type t1, Type t2) {
-        errorMsg.error(pos, new IncompatibleTypeError(t1, t2));
-        return null;
     }
 
     public Boolean checkInt(int pos, Type t) {
@@ -196,11 +141,6 @@ public class Sem4Visitor extends Visitor
         return true;
     }
 
-    public Object expectedError(int pos, Type expected, Type actual) {
-        errorMsg.error(pos, new TypeMismatchError(expected, actual));
-        return null;
-    }
-
     public Object visit(ClassDecl c)
     {
         currentClass = c;
@@ -212,6 +152,50 @@ public class Sem4Visitor extends Visitor
             superType.link = superClass;
         }
         c.decls.accept(this);
+        return null;
+    }
+
+    // - ensure that if a method with a given name is defined in both
+    //   a subclass and a superclass, that they have the same parameters
+    //   (with identical types) and the same return type
+
+    public Object visit(MethodDecl n)
+    {
+        n.formals.accept(this);
+        n.stmts.accept(this);
+        ClassDecl c = currentClass;
+        while(c.superLink != null) {
+            if(c.superLink.methodEnv.containsKey(n.name)) {
+                n.superMethod = c.methodEnv.get(n.name);
+                for(int i = 0; i < n.formals.size(); i++) {
+                    if(!n.formals.get(i).type.equals(n.superMethod.formals.get(i).type)) {
+                        errorMsg.error(n.formals.get(i).pos, new TypeMismatchError(n.formals.get(i).type, n.superMethod.formals.get(i).type));
+                        return null;
+                    }
+                }
+            }
+            c = c.superLink;
+        }
+        return null;
+    }
+
+    // - ensure that the declared return-type of a method is compatible
+    //   with its "return" expression
+
+    public Object visit(MethodDeclNonVoid n)
+    {
+        Type rType = (Type)n.rtnType.accept(this);
+        visit((MethodDecl)n);
+        Type rExp = (Type)n.rtnExp.accept(this);
+        if(n.superMethod != null) {
+            if(!n.rtnType.equals(n.superMethod.rtnType())) {
+                errorMsg.error(n.pos, new TypeMismatchError(n.rtnType, n.superMethod.rtnType));
+                return null;
+            }
+        }
+        if(!checkCompatible(n.pos, rType.pos, rExp.pos, rType, rExp)) {
+            return null;
+        }
         return null;
     }
 
@@ -383,18 +367,11 @@ public class Sem4Visitor extends Visitor
     { 
         Type t1 = (Type)n.left.accept(this);
         Type t2 = (Type)n.right.accept(this);
-        if(t1.isBoolean()) {
-            if(t2.isBoolean()) {
-                n.type = Bool;
-                return n.type; 
-            }
-        } else if(t1.isInt()) {
-            if(t2.isInt()) {
-                n.type = Bool;
-                return n.type; 
-            }
-        } 
-        return matchingError(n.pos, t1, t2);
+        if(!checkCompatible(n.pos, n.left.pos, n.right.pos, t1, t2)) {
+            return null;
+        }
+        n.type = Bool;
+        return n.type;
     }
 
     public Object visit(Not n)         
@@ -479,60 +456,142 @@ public class Sem4Visitor extends Visitor
 
     public Object visit(Cast n)
     {
-        Type t1 = (Type)n.castType.accept(this);
+        n.castType.accept(this);
+        Type t1 = n.castType;
         Type t2 = (Type)n.exp.accept(this);
-        // if(cast type and expression type) {
-            // check if cast type is compatible with expression type
-        // }
+        if(!checkCompatible(n.pos, n.castType.pos, n.exp.pos, t1, t2)) {
+            return null;
+        }
         n.type = t2;
         return n.type;
     }
 
+//- ensure that for each instance variable access (e.g., abc.foo),
+//   there is an instance variable defined for the given class (or
+//   in a superclass
+//   - sets the 'varDec' link in the InstVarAccess to refer to the
+//     method
+
     public Object visit(InstVarAccess n)
     {
+        Type classType = null;
         Type t = (Type)n.exp.accept(this);
-        //n.varDecl // Must link to the instance varDecl that is be accessed
-
-        //n.type = // Find some way to get the type of whatever the class that the instance variable is in
+        // check to see if t is a type
+        ClassDecl c = classEnv.get(((IdentifierType)t).name);
+        if(c.fieldEnv.containsKey(n.varName)) {
+            n.varDec = c.fieldEnv.get(n.varName);
+            classType = new IdentifierType(c.pos, c.name);
+        }
+        while(c.superLink != null) {
+            if(c.superLink.fieldEnv.containsKey(n.varName)) {
+                n.varDec = c.superLink.fieldEnv.get(n.varName);
+                classType = new IdentifierType(c.pos, c.name);
+            }
+            c = c.superLink;
+        }
+        if(n.varDec == null) {
+            errorMsg.error(n.pos, new UndefinedFieldError(n.varName, t));
+            return null;
+        }
+        if(!checkSubtype(n.exp.pos, t, classType)) {
+            return null;
+        }
+        n.type = n.varDec.type;
         return n.type;
     }
 
     public Object visit(InstanceOf n)
     {
         Type t1 = (Type)n.exp.accept(this);
-        Type t2 = (Type)n.checkType.accept(this);
-        // Check compatability
+        n.checkType.accept(this);
+        Type t2 = n.checkType;
+        if(!checkCompatible(n.pos, n.exp.pos, n.checkType.pos, t1, t2)) {
+            return null;
+        }
         n.type = Bool;
         return n.type;
     }
 
-    // Helper method to return the proper type
-    // public Type isType(Type t1) {
-
-    // }
-
     public Object visit(NewArray n)
     {
-        Type t1 = (Type)n.objType.accept(this);
+        n.objType.accept(this);
+        Type t1 = n.objType;
         Type t2 = (Type)n.sizeExp.accept(this);
-        // if(!t1.) {
-        //     return expectedError(n.pos, t1, Int); // Need to figure out what the type is. Maybe use ArrayTypeError
-        // }
+        if(!isBaseType(n.objType.pos, t1)) {
+            return null;
+        }
         if(!checkInt(n.sizeExp.pos, t2)) {
             return null;
         }
-        n.type = t1;
+        n.type = new ArrayType(n.pos, t1);
         return n.type;
     }
 
     public Object visit(NewObject n)
     {
-        Type t = (Type)n.objType.accept(this);
-        // if(!isType(t)) {
-        //     return not a type error
-        // }
-        n.type = n.objType;
+        n.objType.accept(this);
+        Type t = n.objType;
+        //Check if t is not a type
+        n.type = t;
         return n.type;
+    }
+
+// - ensuring that the type of the control expression for an if- or
+//   while-statement is boolean
+
+    public Object visit(If n)
+    {
+        Type t = (Type)n.exp.accept(this);
+        n.trueStmt.accept(this);
+        n.falseStmt.accept(this);
+        if(!checkBoolean(n.exp.pos, t)) {
+            return null;
+        }
+        return null;
+    }
+
+    public Object visit(While n)
+    {
+        Type t = (Type)n.exp.accept(this);
+        n.body.accept(this);
+        if(!checkBoolean(n.exp.pos, t)) {
+            return null;
+        }
+        return null;
+    }
+
+
+    public Object visit(Switch n)
+    {
+        Type t = (Type)n.exp.accept(this);
+        n.stmts.accept(this);
+        if(!checkInt(n.exp.pos, t)) {
+            return null;
+        }
+        return null;
+    }
+
+    public Object visit(Case n)
+    {
+        Type t = (Type)n.exp.accept(this);
+        if(!checkInt(n.exp.pos, t)) {
+            return null;
+        }
+        return null;
+    }
+
+    // - ensure that the RHS expression in each assignment statement is
+//   type-compatible with its corresponding LHS
+//   - also checks that the LHS an lvalue (What does this mean????)
+
+    public Object visit(Assign n)
+    {
+        Type t1 = (Type)n.lhs.accept(this);
+        Type t2 = (Type)n.rhs.accept(this);
+        if(!checkSubtype(n.rhs.pos, t2, t1)) {
+            return null;
+        }
+        return null;
     }
 
 }

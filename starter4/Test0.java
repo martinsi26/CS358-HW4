@@ -1,5 +1,6 @@
 class Parent {
     int x;
+    Parent p;
 }
 
 class Child extends Parent {

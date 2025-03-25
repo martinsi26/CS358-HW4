@@ -4,9 +4,9 @@
 class Main {
     // error: wrong number of parameters for main method in Main class
     public void main(int k) {
-	new Abc().start();
-    Abc[] x = new Abc[1 - 3];
-    Abc y = x[1 - 3];
+		new Abc().start();
+		Abc[] x = new Abc[1 - 3];
+		Abc y = x[1 - 3];
     }
 }
 
@@ -33,6 +33,9 @@ class Abc {
 	b.start(6, "abc");
 	// error: wrong # parameters
 	def.start(3, "xyz", 4);
+
+	def.start(3, "yes");
+
 	// error: parameter-type mismatch
 	def.start(3, true);
 	// error: attempt to index non-array value

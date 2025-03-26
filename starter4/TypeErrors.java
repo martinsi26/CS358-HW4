@@ -49,7 +49,7 @@ class Abc {
 	// error parameter-type mismatch
 	xyz = false;
 	// error: cannot compare void values
-	//b = start() == start();
+	b = start() == start();
 	// error: assignment type incompatibility
 	b = 45;
 	abc = new Def();

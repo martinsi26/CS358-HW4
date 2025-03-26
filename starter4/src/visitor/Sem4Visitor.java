@@ -59,7 +59,7 @@ public class Sem4Visitor extends Visitor
         ceVisitor = new ConstEvalVisitor();
     }
 
-    public Boolean checkCompatible(int pos, int t1pos, int t2pos, Type t1, Type t2) {
+    public Boolean checkCompatible(int pos, Type t1, Type t2) {
         if(checkSubtype(-1, t1, t2) || checkSubtype(-1, t2, t1)) {
             return true;
         }
@@ -69,16 +69,16 @@ public class Sem4Visitor extends Visitor
 
     public Boolean checkSubtype(int pos, Type t1, Type t2) {
         if(t1.isVoid() || t2.isVoid()) {
-            errorMsg.error(pos, new SubtypeError(t1, t2));
+            if(pos >= 0) {
+                errorMsg.error(pos, new SubtypeError(t1, t2));
+            }
             return false;
         }
         if(t1.equals(t2)) {
             return true;
         }
-        if(t1.isArray()) {
-            if(t2.isObject()) {
-                return true;
-            }
+        if(t1.isArray() && t2.isObject()) {
+            return true;
         }
         if(t1.isError()) {
             return true;
@@ -87,19 +87,21 @@ public class Sem4Visitor extends Visitor
             return true;
         }
         if(t1.isID() && t2.isID()) {
-            ClassDecl c = ((IdentifierType)t1).link;
+            ClassDecl c1 = ((IdentifierType)t1).link;
             ClassDecl c2 = ((IdentifierType)t2).link;
-            while(c.superLink != null) {
-                if(c.equals(c2)) {
+            while(c1.superLink != null) {
+                if(c1.equals(c2)) {
                     return true;
                 }
-                c = c.superLink;
+                c1 = c1.superLink;
             }
         }
         if(t1.isNull() && (t2.isID() || t2.isArray())) {
             return true;
         }
-        errorMsg.error(pos, new SubtypeError(t1, t2));
+        if(pos >= 0) {
+            errorMsg.error(pos, new SubtypeError(t1, t2));
+        }
         return false;
     }
 
@@ -120,24 +122,14 @@ public class Sem4Visitor extends Visitor
     }
 
     public Boolean checkArray(int pos, Type t) {
-        if(!t.isArray()) {
-            errorMsg.error(pos, new ArrayTypeError());
-            return false;
-        } else {
+        if(t.isArray()) {
             ArrayType array = (ArrayType)t;
-            while(array.baseType.isArray()) {
-                if(isBaseType(pos, array)) {
+            while(array.baseType != null) {
+                if(array.baseType.isBoolean() || array.baseType.isInt() || array.baseType.isID()) {
                     return true;
                 }
                 array = (ArrayType)array.baseType;
             }
-            return false;
-        }
-    }
-
-    public Boolean isBaseType(int pos, Type t) {
-        if(t.isBoolean() || t.isInt() || t.isID()) {
-            return true;
         }
         errorMsg.error(pos, new ArrayTypeError());
         return false;
@@ -200,7 +192,7 @@ public class Sem4Visitor extends Visitor
                 return null;
             }
         }
-        if(!checkCompatible(n.pos, rType.pos, rExp.pos, rType, rExp)) {
+        if(!checkCompatible(n.pos, rType, rExp)) {
             return null;
         }
         return null;
@@ -347,7 +339,7 @@ public class Sem4Visitor extends Visitor
     { 
         Type t1 = (Type)n.left.accept(this);
         Type t2 = (Type)n.right.accept(this);
-        checkCompatible(n.pos, n.left.pos, n.right.pos, t1, t2);
+        checkCompatible(n.pos, t1, t2);
         n.type = Bool;
         return n.type;
     }
@@ -374,7 +366,7 @@ public class Sem4Visitor extends Visitor
         Type t2 = (Type)n.idxExp.accept(this);
         Boolean isArray = checkArray(n.arrExp.pos, t1);
         Boolean isInt = checkInt(n.idxExp.pos, t2);
-        if(!isArray || !isInt) {
+        if(!isArray) {
             n.type = Error;
             return Error;
         }
@@ -446,7 +438,7 @@ public class Sem4Visitor extends Visitor
         n.castType.accept(this);
         Type t1 = n.castType;
         Type t2 = (Type)n.exp.accept(this);
-        checkCompatible(n.pos, n.castType.pos, n.exp.pos, t1, t2);
+        checkCompatible(n.pos, t1, t2);
         n.type = t2;
         return n.type;
     }
@@ -493,7 +485,7 @@ public class Sem4Visitor extends Visitor
         Type t1 = (Type)n.exp.accept(this);
         n.checkType.accept(this);
         Type t2 = n.checkType;
-        checkCompatible(n.pos, n.exp.pos, n.checkType.pos, t1, t2);
+        checkCompatible(n.pos, t1, t2);
         n.type = Bool;
         return n.type;
     }

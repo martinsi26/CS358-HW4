@@ -96,6 +96,9 @@ public class Sem4Visitor extends Visitor
                 c1 = c1.superLink;
             }
         }
+        if((t1.isID() || t1.isArray()) && t2.isObject()) {
+            return true;
+        }
         if(t1.isNull() && (t2.isID() || t2.isArray())) {
             return true;
         }
@@ -161,13 +164,19 @@ public class Sem4Visitor extends Visitor
         while(c.superLink != null) {
             if(c.superLink.methodEnv.containsKey(n.name)) {
                 n.superMethod = c.superLink.methodEnv.get(n.name);
+                if(n.superMethod instanceof MethodDeclNonVoid) {
+                    if(((MethodDeclNonVoid)n.superMethod).rtnType != Void) {
+                        errorMsg.error(n.pos, new OverrideError(0));
+                        return null;
+                    }
+                }
                 if(n.formals.size() != n.superMethod.formals.size()) {
                     errorMsg.error(n.pos, new OverrideError(1));
                     return null;
                 }
                 for(int i = 0; i < n.formals.size(); i++) {
                     if(!n.formals.get(i).type.equals(n.superMethod.formals.get(i).type)) {
-                        errorMsg.error(n.pos, new OverrideError(2));
+                        errorMsg.error(n.formals.get(i).type.pos, new OverrideError(2));
                         return null;
                     }
                 }
@@ -187,12 +196,15 @@ public class Sem4Visitor extends Visitor
         visit((MethodDecl)n);
         Type rExp = (Type)n.rtnExp.accept(this);
         if(n.superMethod != null) {
-            if(!n.rtnType.equals(((MethodDeclNonVoid)n.superMethod).rtnType)) {
+            if(!(n.superMethod instanceof MethodDeclNonVoid)) {
+                errorMsg.error(n.pos, new OverrideError(0));
+                return null;
+            } else if(!n.rtnType.equals(((MethodDeclNonVoid)n.superMethod).rtnType)) {
                 errorMsg.error(n.pos, new OverrideError(0));
                 return null;
             }
         }
-        if(!checkCompatible(n.pos, rType, rExp)) {
+        if(!checkSubtype(n.pos, rExp, rType)) {
             return null;
         }
         return null;
@@ -289,8 +301,8 @@ public class Sem4Visitor extends Visitor
     { 
         Type t1 = (Type)n.left.accept(this);
         Type t2 = (Type)n.right.accept(this);
-        checkInt(n.left.pos, t1);
-        checkInt(n.right.pos, t2);
+        checkBoolean(n.left.pos, t1);
+        checkBoolean(n.right.pos, t2);
         n.type = Bool;
         return n.type;
     }
@@ -364,29 +376,23 @@ public class Sem4Visitor extends Visitor
     {
         Type t1 = (Type)n.arrExp.accept(this);
         Type t2 = (Type)n.idxExp.accept(this);
-        Boolean isArray = checkArray(n.arrExp.pos, t1);
-        Boolean isInt = checkInt(n.idxExp.pos, t2);
-        if(!isArray) {
+        if(!checkArray(n.arrExp.pos, t1)) {
             n.type = Error;
             return Error;
         }
-        Object obj = n.idxExp.accept(ceVisitor);
-        if(obj != null) {
-            if((Integer)obj < 0) {
-                errorMsg.warning(n.idxExp.pos, new NegativeIndexWarning());
-                n.type = Error;
-                return Error;
+        if(checkInt(n.idxExp.pos, t2)) {
+            Object obj = n.idxExp.accept(ceVisitor);
+            if(obj != null) {
+                if((Integer)obj < 0) {
+                    errorMsg.warning(n.idxExp.pos, new NegativeIndexWarning());
+                }
             }
         }
-        Type t = ((ArrayType)t1).baseType;
-        while(t instanceof ArrayType) {
-            t = ((ArrayType)t).baseType;
-        }
-        n.type = t;
+        n.type = ((ArrayType)t1).baseType;
         return n.type;
     }
 
-    // - ensure that each method-call follows Java's type rules:
+// - ensure that each method-call follows Java's type rules:
 //   - there exists a method for the given class (or a superclass)
 //     for the receiver's object type
 //   - the method has the correct number of parameters
@@ -428,7 +434,7 @@ public class Sem4Visitor extends Visitor
             return n.type;
         }
         for(int i = 0; i < callFormals.size(); i++) {
-            checkSubtype(n.pos, callFormals.get(i).type, methodFormals.get(i).type);
+            checkSubtype(callFormals.get(i).pos, callFormals.get(i).type, methodFormals.get(i).type);
         }
         return n.type;
     }
@@ -439,7 +445,7 @@ public class Sem4Visitor extends Visitor
         Type t1 = n.castType;
         Type t2 = (Type)n.exp.accept(this);
         checkCompatible(n.pos, t1, t2);
-        n.type = t2;
+        n.type = t1;
         return n.type;
     }
 
@@ -485,7 +491,7 @@ public class Sem4Visitor extends Visitor
         Type t1 = (Type)n.exp.accept(this);
         n.checkType.accept(this);
         Type t2 = n.checkType;
-        checkCompatible(n.pos, t1, t2);
+        checkCompatible(n.pos, t2, t1);
         n.type = Bool;
         return n.type;
     }
@@ -496,15 +502,16 @@ public class Sem4Visitor extends Visitor
         Type t1 = n.objType;
         t1 = new ArrayType(n.pos, t1);
         Type t2 = (Type)n.sizeExp.accept(this);
-        Object obj = n.sizeExp.accept(ceVisitor);
-        if(obj != null) {
-            if((Integer)obj < 0) {
-                errorMsg.warning(n.sizeExp.pos, new NegativeLengthWarning());
-                n.type = Error;
-                return Error;
+        if(checkInt(n.sizeExp.pos, t2)) {
+            Object obj = n.sizeExp.accept(ceVisitor);
+            if(obj != null) {
+                if((Integer)obj < 0) {
+                    errorMsg.warning(n.sizeExp.pos, new NegativeLengthWarning());
+                    n.type = Error;
+                    return Error;
+                }
             }
         }
-        checkInt(n.sizeExp.pos, t2);
         n.type = t1;
         return n.type;
     }
@@ -561,7 +568,7 @@ public class Sem4Visitor extends Visitor
     {
         Type t1 = (Type)n.lhs.accept(this);
         Type t2 = (Type)n.rhs.accept(this);
-        checkSubtype(n.rhs.pos, t2, t1);
+        checkSubtype(n.pos, t2, t1);
         if(!(n.lhs instanceof IdentifierExp) && !(n.lhs instanceof InstVarAccess) && !(n.lhs instanceof ArrayLookup)) {
             errorMsg.error(n.pos, new AssignmentError());
         }
@@ -571,7 +578,7 @@ public class Sem4Visitor extends Visitor
     public Object visit(LocalVarDecl n)
     {
         Type t = (Type)n.initExp.accept(this);
-        checkSubtype(n.initExp.pos, t, n.type);
+        checkSubtype(n.pos, t, n.type);
         return visit((VarDecl)n);
     }
 
